@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="google-site-verification" content="HdGsFdeGo6GZwpvlWsq3XeUUBLmAIv1ImHeeUXw4xtU" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Smart Door Locker System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+            
+    <script>
+        tailwind.config = { theme: { extend: { colors: { brand: { navy: '#0f172a', blue: '#1d4ed8', light: '#eff6ff', gray: '#f8fafc', text: '#334155', border: '#e2e8f0' } } } } }
+    </script>
+            
+    <style>
+        body { background-color: #f8fafc; color: #334155; -webkit-tap-highlight-color: transparent; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .fade-in { animation: fadeIn 0.4s ease-in-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+        .toast-animate { animation: slideInUp 0.3s ease-out forwards; }
+        @keyframes slideInUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        #face-modal, #ai-modal, #db-modal { display: none; background: rgba(0,0,0,0.8); z-index: 9999; }
+        .progress-bar-fill { width: 0%; transition: width 0.1s linear; }
+    </style>
+</head>
+
+<body class="font-sans h-screen flex flex-col overflow-hidden antialiased">
+    
+    <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden md:hidden transition-opacity duration-300"></div>
+
+    <header class="bg-white border-b border-brand-border px-4 py-3 flex justify-between items-center z-20 shadow-sm relative">
+        <div class="flex items-center gap-3">
+            <button onclick="toggleSidebar()" class="md:hidden text-brand-navy text-2xl p-2 focus:outline-none"><i class="fa-solid fa-bars"></i></button>
+            <div class="w-10 h-10 bg-brand-light rounded-lg hidden sm:flex items-center justify-center text-brand-blue shadow-sm border border-blue-100">
+                <i class="fa-solid fa-shield-halved text-xl"></i>    
+            </div>
+            <div>
+                <h1 class="text-[10px] font-semibold text-brand-blue tracking-widest uppercase">Welcome</h1>
+                <h2 class="text-base sm:text-xl font-bold tracking-tight text-brand-navy leading-tight">SMART LOCKER</h2>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <div id="wifi-status-indicator" class="flex items-center gap-2 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg shadow-sm transition-all duration-300">
+                <i id="wifi-icon" class="fa-solid fa-wifi text-red-500 text-sm"></i>          
+                <div class="flex flex-col hidden sm:flex">
+                    <span id="wifi-status-text" class="text-[9px] font-bold text-red-600 uppercase tracking-wider leading-none">Offline</span>
+                    <span id="latency-display" class="text-[10px] font-semibold text-red-900 leading-none">Dropped</span>
+                </div>
+            </div>
+            <button id="connect-btn" onclick="autoConnectESP32(true)" class="bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 text-xs font-medium py-1.5 px-3 rounded-lg shadow-sm">
+                <i class="fa-solid fa-link"></i><span class="hidden sm:inline ml-1">Connect</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        <aside id="main-sidebar" class="fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 ease-in-out bg-white border-r border-brand-border w-64 flex-shrink-0 flex flex-col shadow-2xl md:shadow-none z-50 h-full">
+            <div class="p-5 border-b border-brand-border bg-gray-50 flex justify-between items-center">
+                <div class="flex flex-col items-start gap-1 w-full">
+                    <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Locker Status</span>
+                    <span id="door-status-badge" class="flex items-center text-xs font-bold text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-md w-full justify-center transition-all duration-300 shadow-inner">
+                        <i class="fa-solid fa-lock mr-2"></i> LOCKED                    
+                    </span>
+                </div>
+                <button onclick="toggleSidebar()" class="md:hidden text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+                <p class="px-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Navigation</p>
+                <button onclick="switchView('home-view')" id="nav-home-view" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-light text-brand-blue font-medium transition-all text-sm"><i class="fa-solid fa-house w-5 text-center"></i> Home</button>
+                <button onclick="switchView('settings-view')" id="nav-settings-view" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-brand-navy font-medium transition-all text-sm"><i class="fa-solid fa-sliders w-5 text-center"></i> Settings</button>
+                <button onclick="switchView('manual-view')" id="nav-manual-view" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-brand-navy font-medium transition-all text-sm"><i class="fa-solid fa-book w-5 text-center"></i> User Manual</button>
+                <button onclick="switchView('contact-view')" id="nav-contact-view" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-brand-navy font-medium transition-all text-sm"><i class="fa-solid fa-address-card w-5 text-center"></i> Contact Us</button>
+                <button onclick="switchView('about-view')" id="nav-about-view" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-brand-navy font-medium transition-all text-sm"><i class="fa-solid fa-circle-info w-5 text-center"></i> About Us</button>
+            </nav>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto p-4 md:p-8 relative bg-brand-gray w-full">
+            <section id="home-view" class="view-section fade-in block max-w-5xl mx-auto">
+                <div class="mb-6"><h2 class="text-2xl font-bold text-brand-navy mb-1">Dashboard</h2></div>
+                <div class="bg-white border border-brand-border rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-4 py-4 border-b border-brand-border flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-50 gap-3">
+                        <h3 class="font-semibold text-brand-navy flex items-center text-sm"><i class="fa-solid fa-list-check mr-2 text-brand-blue"></i> Live Access Log</h3>
+                        <div class="flex gap-2 w-full sm:w-auto">
+                            <button onclick="clearUI()" class="flex-1 sm:flex-none text-xs font-medium bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-3 py-2 rounded-md shadow-sm justify-center flex"><i class="fa-solid fa-trash mr-1.5"></i> Clear UI</button>
+                            <button onclick="requestOfflineLogs()" class="flex-1 sm:flex-none text-xs font-medium bg-white hover:bg-gray-50 border border-gray-300 text-gray-600 px-3 py-2 rounded-md shadow-sm justify-center flex"><i class="fa-solid fa-cloud-arrow-down mr-1.5"></i> Refresh Data</button>
+                        </div>
+                    </div>
+                    <div id="no-data-message" class="p-12 flex flex-col items-center justify-center text-gray-500 bg-white">
+                        <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3"><i class="fa-solid fa-wifi text-xl text-gray-400"></i></div>
+                        <p class="text-base font-bold text-gray-700 mb-1">WAITING FOR EVENTS</p>
+                        <p class="text-xs text-gray-500 text-center">Logs will appear here instantly.</p>
+                    </div>
+                    <div id="log-table-container" class="overflow-x-auto hidden">
+                        <table class="w-full text-left text-xs md:text-sm">
+                            <thead class="bg-gray-50 text-gray-600 border-b border-gray-200 uppercase tracking-wider text-[10px] md:text-xs font-semibold">
+                                <tr><th class="p-3 pl-4">No.</th><th class="p-3 hidden sm:table-cell">Date</th><th class="p-3">Time</th><th class="p-3">User/Method</th><th class="p-3">Capture</th><th class="p-3 pr-4">Status</th></tr>
+                            </thead>
+                            <tbody id="log-table-body" class="divide-y divide-gray-100 bg-white"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="settings-view" class="view-section hidden max-w-5xl mx-auto">
+                <div class="mb-6"><h2 class="text-2xl font-bold text-brand-navy mb-1">Settings</h2></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                    <div class="bg-white border border-brand-border rounded-xl shadow-sm p-5 flex flex-col">
+                        <div class="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+                            <div class="w-7 h-7 rounded bg-blue-50 flex items-center justify-center text-brand-blue"><i class="fa-solid fa-shield text-sm"></i></div>
+                            <h3 class="font-bold text-brand-navy text-base">Manual Override</h3>
+                        </div>
+                        <div class="flex gap-3 mt-auto">
+                            <button onclick="triggerAction('lock')" class="flex-1 bg-white border border-gray-300 hover:bg-gray-50 text-brand-navy font-semibold py-2.5 rounded-lg shadow-sm text-sm">Lock</button>
+                            <button onclick="triggerSecureUnlock()" class="flex-1 bg-brand-navy hover:bg-blue-900 text-white font-semibold py-2.5 rounded-lg shadow-sm text-sm">Secure Unlock</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-brand-border rounded-xl shadow-sm p-5">
+                        <div class="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+                            <div class="w-7 h-7 rounded bg-blue-50 flex items-center justify-center text-brand-blue"><i class="fa-solid fa-key text-sm"></i></div>
+                            <h3 class="font-bold text-brand-navy text-base">Standard PIN</h3>
+                        </div>
+                        <form onsubmit="updatePassword(event)" class="space-y-3 mt-1">
+                            <div class="flex gap-2">
+                                <input type="password" id="old-pin" maxlength="4" required class="w-1/2 bg-white border border-gray-300 rounded-lg px-3 py-2 text-center font-mono text-sm" placeholder="Old PIN" />
+                                <input type="password" id="new-pin" maxlength="4" required class="w-1/2 bg-white border border-gray-300 rounded-lg px-3 py-2 text-center font-mono text-sm" placeholder="New PIN" />
+                            </div>
+                            <button type="submit" class="w-full bg-brand-blue text-white font-semibold py-2 rounded-lg shadow-sm text-sm">Update PIN</button>
+                        </form>
+                    </div>
+
+                    <div class="bg-white border border-brand-border rounded-xl shadow-sm p-5 flex flex-col">
+                        <div class="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+                            <div class="w-7 h-7 rounded bg-sky-50 flex items-center justify-center text-sky-500"><i class="fa-brands fa-telegram text-sm"></i></div>
+                            <h3 class="font-bold text-brand-navy text-base">Telegram Security Bot</h3>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-3">Sends intruder alerts with photos straight to your Telegram phone app without uploading to the ESP32.</p>
+                        <div class="space-y-2 mt-auto">
+                            <input type="text" id="tg-token" placeholder="Bot Token (from @BotFather)" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs">
+                            <input type="text" id="tg-chatid" placeholder="Your Chat ID (from @userinfobot)" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs">
+                            <button onclick="saveTelegramConfig()" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2 rounded-lg shadow-sm text-sm">Save Bot Settings</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-brand-border rounded-xl shadow-sm p-5 flex flex-col">
+                        <div class="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+                            <div class="w-7 h-7 rounded bg-red-50 flex items-center justify-center text-red-600"><i class="fa-solid fa-lock text-sm"></i></div>
+                            <h3 class="font-bold text-brand-navy text-base">Master Security</h3>
+                        </div>
+                        <label class="flex items-center space-x-2 mb-3 cursor-pointer">
+                            <input type="checkbox" id="tfa-toggle" class="form-checkbox h-4 w-4 text-brand-blue rounded border-gray-300">
+                            <span class="text-xs font-semibold text-gray-700">Enable 2FA (Secret + Primary)</span>
+                        </label>
+                        <div class="space-y-2 mt-auto">
+                            <input type="password" id="cfg-old-secret" placeholder="Old Secret Key" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs">
+                            <input type="password" id="cfg-new-secret" placeholder="New Secret Key (Optional)" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs">
+                            <button onclick="updateSecurityConfig()" class="w-full bg-brand-navy hover:bg-gray-800 text-white font-semibold py-2 rounded-lg shadow-sm text-sm">Save Config</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-brand-border rounded-xl shadow-sm p-5 flex flex-col">
+                        <div class="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+                            <div class="w-7 h-7 rounded bg-emerald-50 flex items-center justify-center text-emerald-600"><i class="fa-solid fa-database text-sm"></i></div>
+                            <h3 class="font-bold text-brand-navy text-base">Database Manager</h3>
+                        </div>
+                        <button onclick="requestRfidRegistration()" class="w-full mb-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg shadow-sm text-sm"><i class="fa-solid fa-plus mr-1"></i> Register RFID</button>
+                        <button onclick="openDbModal()" class="w-full mt-auto bg-gray-100 hover:bg-gray-200 border border-gray-300 text-brand-navy font-semibold py-2.5 rounded-lg shadow-sm text-sm"><i class="fa-solid fa-eye mr-1"></i> View/Delete Users</button>
+                    </div>
+
+                    <div class="bg-white border border-brand-border rounded-xl shadow-sm p-5 flex flex-col md:col-span-2">
+                        <div class="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+                            <div class="w-7 h-7 rounded bg-indigo-50 flex items-center justify-center text-indigo-600"><i class="fa-solid fa-brain text-sm"></i></div>
+                            <h3 class="font-bold text-brand-navy text-base">Face AI Operations</h3>
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-2 mt-auto">
+                            <button onclick="openFaceModal()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 rounded-lg shadow-sm text-sm"><i class="fa-solid fa-camera mr-1"></i> Hardware Enroll</button>
+                            <button onclick="openAiModal('enroll')" class="flex-1 bg-white border border-indigo-500 text-indigo-600 hover:bg-indigo-50 font-semibold py-2.5 rounded-lg shadow-sm text-sm"><i class="fa-solid fa-robot mr-1"></i> Web Train</button>
+                            <button onclick="openAiModal('unlock')" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg shadow-sm text-sm"><i class="fa-solid fa-expand mr-1"></i> Web Unlock</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-brand-border rounded-xl shadow-sm p-5 flex flex-col md:col-span-2">
+                        <div class="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+                            <div class="w-7 h-7 rounded bg-gray-100 flex items-center justify-center text-gray-600"><i class="fa-solid fa-chart-pie text-sm"></i></div>
+                            <h3 class="font-bold text-brand-navy text-base">Activity Chart</h3>
+                        </div>
+                        <div class="w-full relative flex items-center justify-center" style="height: 150px;"><canvas id="analyticsChart"></canvas></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RESTORED VERBATIM USER MANUAL -->
+            <section id="manual-view" class="view-section hidden h-full max-w-4xl mx-auto">
+                <div class="h-[80%] flex flex-col items-center justify-center">
+                    <div class="bg-white border border-brand-border rounded-2xl shadow-md p-10 w-full max-w-2xl text-center">
+                        <div class="w-20 h-20 mx-auto bg-blue-50 rounded-full flex items-center justify-center mb-6">
+                            <i class="fa-solid fa-file-pdf text-4xl text-brand-blue"></i>  
+                        </div>
+                        <div class="flex flex-col md:flex-row items-center justify-center gap-4 mb-4">
+                            <h2 class="text-3xl font-bold text-brand-navy">USER MANUAL</h2>
+                            <a href="https://drive.google.com/drive/folders/1H0LxiSZCaRssVB9LXG2DL3WmKkRQYapT" target="_blank" class="inline-flex items-center gap-2 bg-white border-2 border-brand-blue text-brand-blue hover:bg-brand-blue hover:text-white font-semibold text-sm py-1.5 px-4 rounded-full transition-all duration-300 shadow-sm">
+                                Open Document <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                            </a>
+                        </div>
+                        <p class="text-gray-500 text-base max-w-md mx-auto">Review the complete technical user manual, wiring diagrams, and state-machine schematics stored securely on Google Drive.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RESTORED VERBATIM CONTACT US -->
+            <section id="contact-view" class="view-section hidden max-w-3xl mx-auto">
+                <div class="mb-8 text-center">
+                    <h2 class="text-3xl font-bold text-brand-navy mb-2">Contact Support</h2>
+                    <p class="text-gray-500 text-sm">Reach out to the lead engineer for technical assistance.</p>
+                </div>
+                <div class="bg-white border border-brand-border rounded-xl shadow-md overflow-hidden">
+                    <div class="h-2 w-full bg-brand-blue"></div>
+                    <div class="p-8 space-y-6">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-5 bg-gray-50 rounded-lg border border-gray-100">
+                            <div class="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center text-brand-navy text-xl shadow-sm shrink-0"><i class="fa-solid fa-users"></i></div>
+                            <div class="flex flex-col gap-1">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Lead Developers</p>
+                                <div class="flex items-center gap-2"><p class="text-xl font-bold text-brand-navy">Tharanesh M</p></div>
+                                <div class="flex items-center gap-2"><p class="text-xl font-bold text-brand-navy">Samual Kishore</p></div>
+                                <div class="flex items-center gap-2"><p class="text-xl font-bold text-brand-navy">Syed Hariz</p></div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="flex items-center gap-4 p-4 border border-gray-100 rounded-lg bg-white shadow-sm">
+                                <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-brand-blue shrink-0"><i class="fa-solid fa-phone"></i></div>
+                                <div><p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Direct Line</p><p class="font-semibold text-gray-800">9361019421</p></div>
+                            </div>
+                            <div class="flex items-center gap-4 p-4 border border-gray-100 rounded-lg bg-white shadow-sm">
+                                <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-brand-blue shrink-0"><i class="fa-solid fa-envelope"></i></div>
+                                <div><p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Email Address</p><p class="font-semibold text-gray-800">tharaneshmanogaran@gmail.com</p></div>
+                            </div>
+                            <div class="flex items-center gap-4 p-4 border border-gray-100 rounded-lg bg-white shadow-sm sm:col-span-2">
+                                <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-brand-blue shrink-0"><i class="fa-solid fa-map-location-dot"></i></div>
+                                <div><p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Office Location</p><p class="font-semibold text-gray-800">DUBAI KURUKKUSANDU</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RESTORED VERBATIM ABOUT US -->
+            <section id="about-view" class="view-section hidden max-w-4xl mx-auto">
+                <div class="bg-white border border-brand-border rounded-xl shadow-sm overflow-hidden mt-4">
+                    <div class="bg-brand-navy p-8 text-white relative overflow-hidden">
+                        <div class="absolute -right-10 -top-20 opacity-10 text-9xl"><i class="fa-solid fa-microchip"></i></div>
+                        <h2 class="text-3xl font-bold mb-2 relative z-10">Project Overview</h2>
+                        <p class="text-blue-200 text-sm font-medium relative z-10">Embedded Systems & Hardware Integration</p>
+                    </div>
+                    <div class="p-8 space-y-6 text-gray-600 leading-relaxed text-justify text-base">
+                        <h4>Project Members:</h4>
+                        <ul><li><strong>Syed hariz</strong></li><li><strong>Samual kishore</strong></li><li><strong>Tharanesh</strong></li></ul>
+                        <p><em>Proudly developed by Pre-Final Year ECE Students at Tagore Engineering College, Chennai.</em></p>
+                        <h3>About the Project</h3>
+                        <p>This project was developed by pre-final year Electronics and Communication Engineering (ECE) students dedicated to bridging the gap between hardware architectures and robust software applications. The focus of this development is to demonstrate professional-grade security implementations on accessible hardware.</p>
+                        <p>The core system utilizes an ATmega328P microcontroller architecture, integrating matrix membrane controls, precise servo actuation, and secure local device memory for logging capabilities. By stepping away from simple hobby-level implementations, this system focuses on power optimization, robust state-machine logic, and physical hardware interrupts.</p>
+                        <p>Supported by an NPTEL certification in Java, this desktop dashboard acts as the bridge. It communicates flawlessly over serial protocols to provide an administrative overlay, allowing for real-time monitoring and parameter configuration without requiring hardware modifications.</p>
+                        <h3>The Team Behind the Tech</h3>
+                        <p>We are a passionate group of innovators driven by curiosity and a shared love for bringing lines of code to life in the physical world. We believe that great engineering is built on teamwork, late-night debugging sessions, and a true dedication to creating secure, reliable solutions. Working together on this build has been an incredible collaborative journey, turning theoretical embedded systems concepts into a fully functional, professional ecosystem.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="db-modal" class="fixed inset-0 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-5 w-full max-w-lg flex flex-col max-h-[80vh]">
+            <div class="flex justify-between items-center border-b pb-3 mb-3">
+                <h3 class="text-lg font-bold text-brand-navy">Hardware Database</h3>
+                <button onclick="document.getElementById('db-modal').style.display='none'" class="text-gray-400 hover:text-gray-700"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="text-left overflow-y-auto pr-1 flex-1" id="db-content"></div>
+        </div>
+    </div>
+    
+    <div id="face-modal" class="fixed inset-0 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-5 w-full max-w-sm text-center">
+            <h3 class="text-lg font-bold text-brand-navy mb-3">Hardware Enrollment</h3>
+            <div class="w-full h-40 bg-gray-200 rounded-lg flex items-center justify-center mb-3 overflow-hidden relative border-2 border-brand-blue">
+                <img id="face-stream" src="" alt="Connecting..." class="w-full h-full object-cover">
+            </div>
+            <p id="enroll-status-text" class="text-xs font-semibold text-brand-blue mb-2">Connecting...</p>
+            <div class="w-full bg-gray-200 rounded-full h-2 mb-4"><div id="enroll-progress" class="bg-brand-blue h-2 rounded-full progress-bar-fill"></div></div>
+            <button onclick="closeFaceModal()" class="w-full border border-gray-300 text-gray-600 hover:bg-gray-50 font-semibold py-2 rounded-lg text-sm">Abort</button>
+        </div>
+    </div>
+    
+    <div id="ai-modal" class="fixed inset-0 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-5 w-full max-w-sm text-center">
+            <h3 id="ai-modal-title" class="text-lg font-bold text-indigo-700 mb-3">Web AI Scan</h3>
+            <div class="w-full h-40 bg-gray-200 rounded-lg flex items-center justify-center mb-3 overflow-hidden relative border-2 border-indigo-400">
+                <img id="ai-stream" src="" alt="Connecting..." class="w-full h-full object-cover">
+            </div>
+            <p id="ai-status-text" class="text-xs font-semibold text-indigo-600 mb-2">Loading...</p>
+            <div class="w-full bg-gray-200 rounded-full h-2 mb-4"><div id="ai-progress" class="bg-indigo-500 h-2 rounded-full progress-bar-fill"></div></div>
+            <button onclick="closeAiModal()" class="w-full border border-gray-300 text-gray-600 hover:bg-gray-50 font-semibold py-2 rounded-lg text-sm">Abort</button>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script>
+        // GLOBALS
+        let ESP32_IP = ""; let ESP32_STREAM = ""; const DEFAULT_IP = "10.11.147.74"; 
+        let ws = null; let pingInterval; let silentReconnectTimer = null; let reconnectInterval = null;
+        let intentionalDisconnect = false; let isSystemConnected = false; let isPrompting = false;
+        let isFaceModelLoaded = false, isAdvancedModelsLoaded = false;
+        let isHwEnrolling = false, isWebAiActive = false; 
+        let activityChart = null; let doorTimer = null; let logCounter = 1; 
+        
+        let successCount = 0; let failCount = 0; let consecutiveFails = 0; 
+        let localLockoutDuration = 30000; let localLockoutEndTime = 0;
+
+        // TELEGRAM VARIABLES
+        let tgToken = localStorage.getItem("tg_bot_token") || "8821487179:AAEZta8wkr0AmLKxLRZm41XXRNvhE-1fkz4";
+        let tgChatId = localStorage.getItem("tg_chat_id") || "8751060435";
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if(document.getElementById('tg-token')) document.getElementById('tg-token').value = tgToken;
+            if(document.getElementById('tg-chatid')) document.getElementById('tg-chatid').value = tgChatId;
+        });
+
+        function saveTelegramConfig() {
+            tgToken = document.getElementById('tg-token').value.trim();
+            tgChatId = document.getElementById('tg-chatid').value.trim();
+            localStorage.setItem("tg_bot_token", tgToken);
+            localStorage.setItem("tg_chat_id", tgChatId);
+            showToast("Telegram Settings Saved!", "success");
+        }
+
+        // TELEGRAM NOTIFICATION ENGINE WITH INTRUDER PHOTO ATTACHMENT
+        async function triggerTelegramAlert(method, status, user, imagePath) {
+            if (!tgToken || !tgChatId) return;
+
+            const timeNow = new Date().toLocaleTimeString('en-US', { hour12: false });
+            const dateNow = new Date().toLocaleDateString('en-GB');
+            const caption = `🚨 SECURITY ALERT: Unauthorized Access Attempt!\n\n` +
+                            `📍 Method: ${method}\n` +
+                            `🛑 Status: ${status}\n` +
+                            `👤 Target/User: ${user}\n` +
+                            `⏰ Time: ${timeNow} (${dateNow})`;
+
+            if (imagePath && imagePath !== "" && imagePath !== "null") {
+                try {
+                    const imgResponse = await fetch(`${ESP32_IP}${imagePath}?t=${Date.now()}`);
+                    const imgBlob = await imgResponse.blob();
+
+                    const formData = new FormData();
+                    formData.append('chat_id', tgChatId);
+                    formData.append('photo', imgBlob, 'intruder.jpg');
+                    formData.append('caption', caption);
+
+                    await fetch(`https://api.telegram.org/bot${tgToken}/sendPhoto`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    return;
+                } catch (e) {
+                    console.error("Photo transmission failed, falling back to text:", e);
+                }
+            }
+
+            fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: tgChatId,
+                    text: caption
+                })
+            }).catch(e => console.error(e));
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('main-sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.toggle('-translate-x-full'); overlay.classList.toggle('hidden');
+        }
+
+        function switchView(viewId) {
+            document.querySelectorAll('.view-section').forEach(el => { el.classList.add('hidden'); el.classList.remove('block'); });
+            document.querySelectorAll('.nav-btn').forEach(el => { el.classList.remove('bg-brand-light', 'text-brand-blue'); el.classList.add('text-gray-600'); });
+            document.getElementById(viewId).classList.remove('hidden'); document.getElementById(viewId).classList.add('block');
+            document.getElementById('nav-' + viewId).classList.add('bg-brand-light', 'text-brand-blue');
+            if(window.innerWidth < 768) toggleSidebar(); 
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast-animate ${type === 'success' ? 'bg-emerald-500' : 'bg-red-500'} text-white px-5 py-2.5 rounded-lg shadow-lg mb-2 flex items-center gap-2 text-sm z-[9999]`;
+            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${message}`;
+            document.getElementById('toast-container').appendChild(toast); setTimeout(() => toast.remove(), 3000);
+        }
+
+        function updateConnectionUI(online) {
+            isSystemConnected = online;
+            const ind = document.getElementById('wifi-status-indicator');
+            const icon = document.getElementById('wifi-icon');
+            const txt = document.getElementById('wifi-status-text');
+            const btn = document.getElementById('connect-btn');
+            
+            if(online) {
+                ind.className = "flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg shadow-sm transition-all duration-300";
+                icon.className = "fa-solid fa-wifi text-emerald-500 text-sm";
+                txt.className = "text-[9px] font-bold text-emerald-600 uppercase tracking-wider leading-none"; txt.innerText = "Online";
+                btn.innerHTML = '<i class="fa-solid fa-link-slash"></i><span class="hidden sm:inline ml-1">Disconnect</span>';
+                btn.className = "bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-xs font-medium py-1.5 px-3 rounded-lg shadow-sm";
+                btn.onclick = disconnectESP32; 
+            } else {
+                ind.className = "flex items-center gap-2 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg shadow-sm transition-all duration-300";
+                icon.className = "fa-solid fa-wifi text-red-500 text-sm";
+                txt.className = "text-[9px] font-bold text-red-600 uppercase tracking-wider leading-none"; txt.innerText = "Offline";
+                document.getElementById('latency-display').className = "text-[10px] font-semibold text-red-900 leading-none";
+                document.getElementById('latency-display').innerText = "Dropped";
+                btn.innerHTML = '<i class="fa-solid fa-link"></i><span class="hidden sm:inline ml-1">Connect</span>';
+                btn.className = "bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 text-xs font-medium py-1.5 px-3 rounded-lg shadow-sm";
+                btn.onclick = () => autoConnectESP32(true);
+            }
+        }
+
+        function setDoorState(isOpen) {
+            const badge = document.getElementById('door-status-badge');
+            if(isOpen) {
+                badge.className = "flex items-center text-[10px] md:text-xs font-bold text-amber-600 bg-amber-100 px-2 py-1.5 rounded-md w-full justify-center transition-all duration-300 shadow-inner";
+                badge.innerHTML = '<i class="fa-solid fa-door-open mr-1.5"></i> DOOR OPENING';
+            } else {
+                badge.className = "flex items-center text-[10px] md:text-xs font-bold text-emerald-600 bg-emerald-100 px-2 py-1.5 rounded-md w-full justify-center transition-all duration-300 shadow-inner";
+                badge.innerHTML = '<i class="fa-solid fa-lock mr-1.5"></i> LOCKED';
+            }
+        }
+
+        function triggerDoorOpenSequence() {
+            setDoorState(true); if(doorTimer) clearTimeout(doorTimer);
+            doorTimer = setTimeout(() => { setDoorState(false); }, 5500); 
+        }
+
+        function checkLocalLockout() {
+            if (localLockoutEndTime > 0 && Date.now() < localLockoutEndTime) {
+                let rem = Math.ceil((localLockoutEndTime - Date.now()) / 1000);
+                showToast(`SYSTEM LOCKED! Wait ${rem}s`, "error"); return true;
+            }
+            if (localLockoutEndTime > 0 && Date.now() >= localLockoutEndTime) {
+                consecutiveFails = 0; localLockoutEndTime = 0; 
+            } return false;
+        }
+
+        function ensureStrongConnection() {
+            if (!isSystemConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+                showToast("Connection unstable! Forcing reconnect...", "error");
+                updateConnectionUI(false);
+                if (!intentionalDisconnect) autoConnectESP32(false);
+                return false;
+            } return true;
+        }
+
+        function connectWebSocket(targetHost) {
+            ESP32_IP = `http://${targetHost}`; ESP32_STREAM = `http://${targetHost}`; 
+            document.getElementById('wifi-status-text').innerText = "Connecting";
+            ws = new WebSocket(`ws://${targetHost}:81`);
+            
+            ws.onopen = () => {
+                intentionalDisconnect = false;
+                if(reconnectInterval) { clearInterval(reconnectInterval); reconnectInterval = null; }
+                if(silentReconnectTimer) clearTimeout(silentReconnectTimer);
+                updateConnectionUI(true);
+                pingInterval = setInterval(() => { if(ws && ws.readyState === WebSocket.OPEN && !isPrompting) ws.send("PING|" + Date.now()); }, 2000);
+            };
+
+            ws.onmessage = (event) => {
+                const data = event.data.split('|'); const cmd = data[0];
+                if (cmd === "PONG") {
+                    let lat = Date.now() - parseInt(data[1]);
+                    document.getElementById('latency-display').className = "text-[10px] font-semibold text-emerald-900 leading-none";
+                    document.getElementById('latency-display').innerText = lat + " ms";
+                }
+                else if (cmd === "LOG") { appendLogToUI(data[1], data[2], data[3], data[4]); updateAnalyticsChart(data[2]); } 
+                else if (cmd === "TOAST") { showToast(data[2], data[1]); if(data[2].includes("Unlocked") || data[2].includes("Unlocking")) triggerDoorOpenSequence(); }
+                else if (cmd === "SYNC_STATE") { if(data[1]==="UNLOCKED") triggerDoorOpenSequence(); else setDoorState(false); }
+                else if (cmd === "PROMPT_RFID_NAME") {
+                    isPrompting = true; const userName = prompt(`New Card (${data[1]})\nEnter name to save:`); isPrompting = false;
+                    if(userName) ws.send(`SAVE_RFID|${data[1]}|${userName}`);
+                }
+                else if (cmd === "START_HW_ENROLL") showFaceModal();
+                else if (cmd === "START_WEB_ENROLL") showAiModal('enroll');
+                else if (cmd === "DB_DATA") renderDatabase(data[1], data[2], data[3]);
+                else if (cmd === "CLR_WEB_FACE") { localStorage.removeItem('savedAiFace'); showToast("Web Face Deleted"); }
+                else if (cmd === "OFFLINE_LOG_SYNC") { try { JSON.parse(data[1]).forEach(lg => appendLogToUI(lg.method, lg.status, lg.user, lg.imageUrl)); } catch(e) {} }
+            };
+
+            ws.onclose = () => {
+                clearInterval(pingInterval);
+                if(intentionalDisconnect) return;
+                if (!reconnectInterval) {
+                    reconnectInterval = setInterval(() => {
+                        if (intentionalDisconnect) { clearInterval(reconnectInterval); reconnectInterval = null; return; }
+                        if (!ws || ws.readyState === WebSocket.CLOSED) connectWebSocket(localStorage.getItem("esp32_ip") || DEFAULT_IP);
+                    }, 1500);
+                }
+                silentReconnectTimer = setTimeout(() => { updateConnectionUI(false); showToast("Connection dropped. Reconnecting...", "error"); }, 1500); 
+            };
+        }
+
+        function autoConnectESP32(forcePrompt = false) {
+            intentionalDisconnect = false;
+            let savedIP = localStorage.getItem("esp32_ip") || DEFAULT_IP;
+            if (forcePrompt) {
+                isPrompting = true; let manualIP = prompt("Enter ESP32 IP:", savedIP); isPrompting = false;
+                if (manualIP) { savedIP = manualIP.replace(/^https?:\/\//, '').replace(/\/$/, ''); localStorage.setItem("esp32_ip", savedIP); } 
+                else return;
+            }
+            connectWebSocket(savedIP);
+        }
+
+        function disconnectESP32() {
+            intentionalDisconnect = true; if(ws) { ws.close(); ws = null; } 
+            clearInterval(pingInterval); if(reconnectInterval) { clearInterval(reconnectInterval); reconnectInterval = null; }
+            if(silentReconnectTimer) clearTimeout(silentReconnectTimer);
+            updateConnectionUI(false); showToast("System Disconnected Manually");
+        }
+        window.onload = () => autoConnectESP32(false);
+
+        function triggerAction(action) { if(!ensureStrongConnection() || checkLocalLockout()) return; if(action === 'lock') { ws.send("APP_LOCK"); setDoorState(false); } }
+
+        function triggerSecureUnlock() {
+            if(!ensureStrongConnection()) return;
+            isPrompting = true; const secret = prompt("Enter Master Secret Key:"); isPrompting = false;
+            if (secret) { ws.send(`APP_UNLOCK|${secret}`); triggerDoorOpenSequence(); }
+        }
+
+        function requestRfidRegistration() {
+            if(!ensureStrongConnection() || checkLocalLockout()) return;
+            isPrompting = true; const secret = prompt("Enter Master Secret Key:"); isPrompting = false;
+            if (secret) ws.send(`REQ_REG_RFID|${secret}`);
+        }
+
+        function updateSecurityConfig() {
+            if(!ensureStrongConnection()) return;
+            const oldSec = document.getElementById('cfg-old-secret').value;
+            const newSec = document.getElementById('cfg-new-secret').value || oldSec;
+            const tfa = document.getElementById('tfa-toggle').checked ? "true" : "false"; 
+            if (!oldSec) return showToast("Current Master Secret Required!", "error");
+            ws.send(`UPDATE_CONFIG|${oldSec}|${newSec}|${tfa}`);
+            document.getElementById('cfg-old-secret').value = ""; document.getElementById('cfg-new-secret').value = "";
+        }
+
+        function updatePassword(e) {
+            e.preventDefault(); if(!ensureStrongConnection() || checkLocalLockout()) return;
+            ws.send(`UPDATE_PIN|${document.getElementById('old-pin').value}|${document.getElementById('new-pin').value}`); e.target.reset();
+        }
+
+        function clearUI() {
+            isPrompting = true; const conf = confirm("Clear dashboard logs?"); isPrompting = false;
+            if(!conf) return;
+            document.getElementById('log-table-body').innerHTML = "";
+            document.getElementById('no-data-message').classList.remove('hidden'); document.getElementById('log-table-container').classList.add('hidden');
+        }
+
+        function requestOfflineLogs() { if(!ensureStrongConnection()) return; ws.send("GET_LOGS"); showToast("Fetching offline logs...", "success"); }
+
+        function openDbModal() {
+            if(!ensureStrongConnection() || checkLocalLockout()) return;
+            isPrompting = true; const sec = prompt("Enter Secret Key to view DB:"); isPrompting = false;
+            if(sec) ws.send("GET_DB|" + sec);
+        }
+
+        function renderDatabase(rfidJson, hwFaceName, webFaceName) {
+            const db = JSON.parse(rfidJson);
+            let html = '<p class="text-xs text-brand-navy font-bold uppercase tracking-wider mb-2">Saved RFIDs</p><ul class="space-y-2 mb-4">';
+            for(const [uid, name] of Object.entries(db)) { html += `<li class="flex justify-between items-center bg-gray-50 p-2.5 rounded-lg border border-gray-200"><span class="font-mono text-xs">${uid} - <b>${name}</b></span><button onclick="delRfid('${uid}')" class="text-red-500"><i class="fa-solid fa-trash"></i></button></li>`; }
+            if(Object.keys(db).length === 0) html += `<li class="text-xs text-gray-400">No RFIDs saved</li>`;
+            
+            html += '</ul><p class="text-xs text-brand-navy font-bold uppercase tracking-wider mb-2">Hardware Face</p>';
+            if(hwFaceName !== "None") html += `<div class="flex justify-between items-center bg-gray-50 p-2.5 rounded-lg border border-gray-200 mb-4"><span class="text-xs font-semibold">${hwFaceName}</span><button onclick="delHwFace()" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div>`;
+            else html += `<p class="text-xs text-gray-400 mb-4">No Enrollments</p>`;
+            
+            html += '<p class="text-xs text-brand-navy font-bold uppercase tracking-wider mb-2">Web AI Face</p>';
+            if(webFaceName !== "None") html += `<div class="flex justify-between items-center bg-gray-50 p-2.5 rounded-lg border border-gray-200 mb-2"><span class="text-xs font-semibold">${webFaceName}</span><button onclick="delWebFace()" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div>`;
+            else html += `<p class="text-xs text-gray-400 mb-2">No Enrollments</p>`;
+            
+            document.getElementById('db-content').innerHTML = html; document.getElementById('db-modal').style.display = 'flex';
+        }
+
+        function delRfid(uid) { isPrompting=true; const sec=prompt("Enter Secret:"); isPrompting=false; if(sec){ws.send(`DEL_RFID|${sec}|${uid}`); document.getElementById('db-modal').style.display='none';} }
+        function delHwFace() { isPrompting=true; const sec=prompt("Enter Secret:"); isPrompting=false; if(sec){ws.send(`DEL_HW_FACE|${sec}`); document.getElementById('db-modal').style.display='none';} }
+        function delWebFace() { isPrompting=true; const sec=prompt("Enter Secret:"); isPrompting=false; if(sec){ws.send(`DEL_WEB_FACE|${sec}`); document.getElementById('db-modal').style.display='none';} }
+
+        function appendLogToUI(method, status, user, imagePath) {
+            document.getElementById('no-data-message').classList.add('hidden'); document.getElementById('log-table-container').classList.remove('hidden');
+            let statusClass = 'bg-gray-100 text-gray-800'; let icon = 'fa-circle-info';
+            
+            if (status.includes('UNLOCKED') || status.includes('CORRECT') || status.includes('MATCH')) {
+                statusClass = 'bg-emerald-100 text-emerald-800 border border-emerald-200'; icon = 'fa-check';
+                consecutiveFails = 0; localLockoutDuration = 30000; localLockoutEndTime = 0; 
+            } else if (status === 'LOCKED' || status.includes('INCORRECT') || status.includes('FAIL') || status.includes('DENIED')) {
+                statusClass = 'bg-red-100 text-red-800 border border-red-200'; icon = 'fa-xmark';
+                consecutiveFails++;
+                if (consecutiveFails >= 3 && Date.now() >= localLockoutEndTime) {
+                    localLockoutEndTime = Date.now() + localLockoutDuration; localLockoutDuration += 30000; 
+                    showToast("SYSTEM LOCKED", "error");
+                }
+                
+                // TRIGGER INSTANT TELEGRAM BOT NOTIFICATION WITH PHOTO
+                triggerTelegramAlert(method, status, user, imagePath);
+            } 
+
+            let imageHtml = '<span class="text-[10px] text-gray-400">None</span>';
+            if (imagePath && imagePath !== "") imageHtml = `<a href="${ESP32_IP}${imagePath}?t=${new Date().getTime()}" target="_blank" class="text-brand-blue font-semibold text-xs"><i class="fa-solid fa-image"></i> View</a>`;
+            
+            const now = new Date();
+            const row = `
+                <tr class="hover:bg-gray-50 border-b border-gray-50">
+                    <td class="p-3 pl-4 font-medium text-gray-900">${logCounter++}</td>
+                    <td class="p-3 text-gray-600 hidden sm:table-cell">${now.toLocaleDateString('en-GB')}</td>
+                    <td class="p-3 text-gray-600">${now.toLocaleTimeString('en-US', { hour12: false })}</td>
+                    <td class="p-4 font-semibold text-brand-navy">${method} <span class="font-normal text-[10px] text-gray-500 block">${user}</span></td>
+                    <td class="p-3">${imageHtml}</td>
+                    <td class="p-3 pr-4"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${statusClass}"><i class="fa-solid ${icon} mr-1"></i> ${status}</span></td>
+                </tr>`;
+            document.getElementById('log-table-body').insertAdjacentHTML('afterbegin', row);
+        }
+
+        function updateAnalyticsChart(status) {
+            if (status === 'LOCKED' || status.includes('INCORRECT') || status.includes('FAIL') || status.includes('DENIED')) failCount++;
+            else if (status.includes('UNLOCKED') || status.includes('CORRECT') || status.includes('MATCH')) successCount++;
+
+            const ctx = document.getElementById('analyticsChart'); if (!ctx) return;
+            if (activityChart) { activityChart.data.datasets[0].data = [successCount, failCount]; activityChart.update(); } 
+            else { activityChart = new Chart(ctx, { type: 'doughnut', data: { labels: ['Success', 'Failed'], datasets: [{ data: [successCount, failCount], backgroundColor: ['#10b981', '#ef4444'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } } } } }); }
+        }
+
+        // --- CAMERA LOOPS ---
+        function openFaceModal() {
+            if(!ensureStrongConnection() || checkLocalLockout()) return;
+            isPrompting = true; const sec = prompt("Enter Secret Key to Enroll HW Face:"); isPrompting = false;
+            if(sec) ws.send("REQ_HW_ENROLL|" + sec);
+        }
+
+        async function showFaceModal() {
+            document.getElementById('face-modal').style.display = 'flex';
+            const streamImg = document.getElementById('face-stream'); streamImg.crossOrigin = "anonymous"; streamImg.src = `${ESP32_STREAM}/stream?t=${new Date().getTime()}`; 
+            let progress = 0; const bar = document.getElementById('enroll-progress'); const txt = document.getElementById('enroll-status-text'); bar.style.width = '0%';
+            
+            try { if (!isFaceModelLoaded) { await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'); isFaceModelLoaded = true; } } catch(e){}
+            txt.innerText = "Position face..."; isHwEnrolling = true; hwFaceLoop(streamImg, progress, bar, txt);
+        }
+
+        async function hwFaceLoop(streamImg, progress, bar, txt) {
+            if (!isHwEnrolling) return;
+            if (!isFaceModelLoaded || !streamImg.complete || streamImg.naturalWidth === 0) { setTimeout(() => hwFaceLoop(streamImg, progress, bar, txt), 400); return; }
+            try {
+                const det = await faceapi.detectSingleFace(streamImg, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }));
+                if (det) { progress += 20; if (progress > 100) progress = 100; bar.style.width = progress + '%'; txt.innerText = `Extracting: ${progress}%`; } 
+                else { txt.innerText = "No Face Detected"; }
+            } catch (error) {}
+
+            if(progress >= 100) {
+                isHwEnrolling = false; txt.innerText = "Saving...";
+                setTimeout(() => {
+                    isPrompting = true; const fName = prompt("Enter Name for Hardware Face:"); isPrompting = false;
+                    ws.send("ENROLL_HARDWARE_FACE|" + (fName ? fName : "Unknown")); closeFaceModal(); 
+                }, 500);
+            } else setTimeout(() => hwFaceLoop(streamImg, progress, bar, txt), 400); 
+        }
+        function closeFaceModal() { isHwEnrolling = false; document.getElementById('face-modal').style.display = 'none'; document.getElementById('face-stream').src = ""; }
+
+        async function loadAdvancedAiModels() {
+            if (!isAdvancedModelsLoaded) {
+                const p = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+                await faceapi.nets.tinyFaceDetector.loadFromUri(p); await faceapi.nets.faceLandmark68Net.loadFromUri(p); await faceapi.nets.faceRecognitionNet.loadFromUri(p); isAdvancedModelsLoaded = true;
+            }
+        }
+
+        function openAiModal(mode) {
+            if(!ensureStrongConnection() || checkLocalLockout()) return;
+            if(mode === 'enroll') {
+                isPrompting = true; const sec = prompt("Enter Secret Key to Train Web AI:"); isPrompting = false;
+                if(sec) ws.send("REQ_WEB_ENROLL|" + sec);
+            } else {
+                if(!localStorage.getItem('savedAiFace')) return showToast("Train Web AI first!", "error");
+                showAiModal('unlock');
+            }
+        }
+
+        async function showAiModal(mode) {
+            document.getElementById('ai-modal').style.display = 'flex'; document.getElementById('ai-modal-title').innerText = mode === 'enroll' ? 'AI Training' : 'AI Unlock';
+            const streamImg = document.getElementById('ai-stream'); streamImg.crossOrigin = "anonymous"; streamImg.src = `${ESP32_STREAM}/stream?t=${new Date().getTime()}`; 
+            let progress = 0; const bar = document.getElementById('ai-progress'); const txt = document.getElementById('ai-status-text'); bar.style.width = '0%';
+            
+            try { await loadAdvancedAiModels(); } catch (err) { txt.innerText = "Failed."; return; }
+            txt.innerText = "Scanning..."; isWebAiActive = true; webAiLoop(mode, streamImg, progress, bar, txt);
+        }
+
+        async function webAiLoop(mode, streamImg, progress, bar, txt) {
+            if (!isWebAiActive) return;
+            if (!isAdvancedModelsLoaded || !streamImg.complete || streamImg.naturalWidth === 0) { setTimeout(() => webAiLoop(mode, streamImg, progress, bar, txt), 400); return; }
+            try {
+                const det = await faceapi.detectSingleFace(streamImg, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 })).withFaceLandmarks().withFaceDescriptor();
+                if (det) {
+                    progress += 25; bar.style.width = progress + '%'; txt.innerText = `Processing: ${progress}%`;
+                    if(progress >= 100) {
+                        isWebAiActive = false;
+                        if (mode === 'enroll') {
+                            localStorage.setItem('savedAiFace', JSON.stringify(Array.from(det.descriptor)));
+                            setTimeout(() => {
+                                isPrompting = true; const name = prompt("Name for Web AI Face:"); isPrompting = false;
+                                ws.send("SAVE_WEB_FACE|" + (name ? name : "Unknown")); closeAiModal();
+                            }, 500);
+                        } else if (mode === 'unlock') {
+                            txt.innerText = "Comparing...";
+                            const dist = faceapi.euclideanDistance(det.descriptor, new Float32Array(JSON.parse(localStorage.getItem('savedAiFace'))));
+                            if(dist < 0.45) { txt.innerText = "VERIFIED."; setTimeout(() => { ws.send("APP_AI_UNLOCK"); triggerDoorOpenSequence(); closeAiModal(); }, 500); } 
+                            else { 
+                                txt.innerText = "REJECTED."; showToast("Failed.", "error"); 
+                                ws.send("WEB_AI_FAIL"); 
+                                appendLogToUI("WEB_APP", "FACE_FAIL", "Unknown", ""); 
+                                updateAnalyticsChart("FAIL"); 
+                                setTimeout(closeAiModal, 2000); 
+                            }
+                        }
+                        return;
+                    }
+                } else txt.innerText = "Face not found.";
+            } catch (error) { }
+            setTimeout(() => webAiLoop(mode, streamImg, progress, bar, txt), 400);
+        }
+
+        function closeAiModal() { isWebAiActive = false; document.getElementById('ai-modal').style.display = 'none'; document.getElementById('ai-stream').src = ""; }
+    </script>
+</body>
+</html>
